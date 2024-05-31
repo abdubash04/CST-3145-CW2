@@ -1,34 +1,64 @@
-const express = require('express')
+// Import dependencies modules:
+const express = require('express');
 
-const app = express()
+// Create an Express.js instance:
+const app = express();
 
-app.use(express.json())
-app.set('port', 3000)
-app.use ((req,res,next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT");
-    res.setHeader("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
-    next();
-})
+// Config Express.js
+app.use(express.json());
+app.set('port', 3000); // Update to match the listening port
 
-const MongoClient = require('mongodb').MongoClient;
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers');
+  next();
+});
+app.use(express.static(__dirname + "/static"))
+// Connect to MongoDB
+const { MongoClient, ObjectId } = require("mongodb");
+const client = new MongoClient(
+    'mongodb+srv://abdubash04:Family01234@cluster0.datjqek.mongodb.net/',
+);
+var db = client.db("webstore")
 
-let db;
 
-MongoClient.connect('mongodb+srv://abdubash04:Family01234@cluster0.datjqek.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', (err, Client)=>{
-    db = Client.db('webstore');
-})
+// Logger Middleware
+app.use((req, res, next) => {
+  var log = `${req.ip} -- ${req.method} ${req.path} ${res.statusCode}`;
+  console.log(log, req.body);
+  next();
+});
 
-app.get('/', (req, res, next) => {
-    res.send('Select a collection, e.g., /collection/messages')
-})
+app.get("/", (req, res) => {
+  res.send("Select a collection, e.g., /collection/products");
+});
 
-app.post("/search/collection/:collectionName/", (req, res, next) => {
-    var search = req.body.search;
-    var sort = req.body.sort || "title";
-    var order = req.body.order == "desc" ? -1 : 1;
-  
+// retrieve all the object from a collection
+app.get("/collection/:collectionName", (req, res) => {
+  try {
+    db.collection(req.params.collectionName)
+      .find({})
+      .toArray()
+      .then((results) => {
+        res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
+      });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+// Search
+app.post("/search/collection/products/", (req, res) => {
+  try {
+    let search = req.body.search;
+    let sort = req.body.sort || "title";
+    let order = req.body.order === "desc" ? -1 : 1;
+
     if (search) {
       search = {
         $or: [
@@ -40,59 +70,84 @@ app.post("/search/collection/:collectionName/", (req, res, next) => {
     } else {
       search = {};
     }
-  
-    db.collection(req.params.collectionName)
+
+    db.collection("products")
       .find(search)
       .sort({ [sort]: order })
-      .toArray((e, results) => {
-        if (e) return next(e);
+      .toArray()
+      .then((results) => {
         res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
       });
-  });
-  
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
-app.post('/collection/:collectionName', (req, res, next) => {
-    req.collection.insert(req.body, (e, results) => {
-        if (e) return next(e)
-            res.send(results.ops);
-        
-    })
-})
+//to insert a document to the collection
+app.post("/collection/:collectionName", (req, res) => {
+  try {
+    db.collection(req.params.collectionName)
+      .insertOne(req.body)
+      .then((results) => {
+        res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
+      });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
-app.param('collectionName', (req, res, next, collectionName) => {
-    req.collection = db.collection(collectionName)
-    console.log(req);
-        return next()
-    })
+app.get("/collection/:collectionName/:id", (req, res) => {
+  try {
+    db.collection(req.params.collectionName)
+      .findOne({ _id: new ObjectId(req.params.id) })
+      .then((results) => {
+        res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
+      });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
-app.get('/collection/:collectionName', (req, res, next) =>{
-    req.collection.find({}).toArray((e, results) => {
-        if (e) return next(e)
-            res.send(results)
-        
-    })
-})
+//to update a document by ID
+app.put("/collection/:collectionName/:id", (req, res) => {
+  try {
+    db.collection(req.params.collectionName)
+      .updateOne({ _id: new ObjectId(req.params.id) }, { $set: req.body })
+      .then((results) => {
+        res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
+      });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
-app.put('/collection/:collectionName/:id', (req, res, next)=>{
-    req.collection.update(
-        {_id: new objectID(req.params.id)},
-        {$set: req.body},
-        {safe: true, multi: false},
-        (e, result) => {
-            if (e) return next (e)
-                res.send((result.result.n === 1) ? {msg: 'success'} : {msg : 'error'})
-        }
-    )
-})
+app.delete("/collection/:collectionName/:id", (req, res) => {
+  try {
+    db.collection(req.params.collectionName)
+      .deleteOne({ _id: new ObjectId(req.params.id) })
+      .then((results) => {
+        res.send(results);
+      })
+      .catch((error) => {
+        res.status(500).send({ error: error.message });
+      });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
-app.delete('collection/:collectionName/:id', (req, res, next) => {
-    req.collection.deleteOne(
-        {_id: objectID(req.params.id)},(e, result) => {
-            if (e) return next (e)
-                res.send((result.result.n === 1)?
-            {msg: 'success'} : {msg: 'error'})
-        } )
-})
-app.listen(3000, ()=>{
-    console.log('express.js server running at localhost:3000');
-})
+app.listen(3000, () => {
+  console.log("Express.js server running at PORT 3000");
+});
